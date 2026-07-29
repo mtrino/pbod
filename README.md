@@ -1,24 +1,22 @@
 PBOD: Personal Board of Directors
 
-PBOD is an intelligent, agentic orchestration framework designed to act as your personal "Chief of Staff." It decomposes complex, multi-domain queries into structured execution plans and autonomously routes tasks to specialized agents (e.g., Financial Accountants, RAG-enabled Researchers) to synthesize precise insights.
+PBOD is an intelligent, agentic orchestration framework that acts as your personal "Chief of Staff." Rather than a single chatbot, PBOD decomposes complex, multi-domain queries into structured execution plans, autonomously routing tasks to specialized agents (e.g., Financial Accountants, RAG-enabled Researchers) to synthesize precise insights.
 
-Architecture
+🧠 Architecture
 
-PBOD is built on a ReAct (Reasoning + Acting) loop leveraging LiteLLM and Cohere Command R+. Rather than a static pipeline, it utilizes a "Chief of Staff" Supervisor agent that performs structured JSON routing to coordinate specialized worker agents with access to modular, local tools.
+PBOD utilizes a Supervisor-Worker pattern built on a ReAct (Reasoning + Acting) loop.
 
-Key Components
+The Supervisor: An intelligent router that breaks user queries into actionable, multi-step sub-tasks.
 
-The Supervisor: An intelligent router that decomposes user queries into actionable, multi-step sub-tasks.
-
-Worker Agents: Specialized experts capable of performing tool-specific operations (Gmail, Vector DBs, Financial APIs).
+Worker Agents: Specialized experts capable of executing tool-specific operations (Gmail, Vector DBs, Financial APIs).
 
 Hybrid Search: Implements both Dense (vector) and Sparse (BM25) search for high-fidelity information retrieval.
 
-Native Orchestration: Built with pure Python orchestration for maximum control over the agent's thought process and reduced framework overhead.
+Native Orchestration: Built with pure Python orchestration for maximum control over reasoning chains and low framework overhead.
 
-Roadmap: The Path to Full Fledged AI Ready Assistants
+🚀 Roadmap: The Path to Full Autonomous Assistants
 
-We are actively evolving the PBOD framework. Our development roadmap includes:
+We are actively evolving the PBOD framework. We track our development progress below:
 
 [ ] Observability & Explainability: Integration with Langfuse for full reasoning chains and cost analytics.
 
@@ -26,17 +24,17 @@ We are actively evolving the PBOD framework. Our development roadmap includes:
 
 [ ] Advanced Reranking: Implementing Cohere Rerank to optimize document retrieval relevance.
 
-[ ] Persistent Memory: Moving from session-based SQLite memory to long-term episodic memory.
+[ ] Persistent Memory: Transitioning from session-based SQLite to long-term episodic memory.
 
-[ ] Human-in-the-Loop (HITL): Adding tactical gates for high-stakes tool execution (e.g., transactions).
+[ ] Human-in-the-Loop (HITL): Implementing tactical confirmation gates for high-stakes tool execution.
 
 [ ] Enterprise Functionality: Caching for LLM calls, score-based agent routing, and metadata-driven filtering.
 
-[ ] Containerization: Full Docker support for portable deployment.
+[ ] Containerization: Full Docker support for portable, robust deployment.
 
 [ ] UI/UX: A comprehensive, dashboard-driven interface for monitoring agent activity.
 
-Getting Started
+🛠️ Getting Started
 
 Prerequisites
 
