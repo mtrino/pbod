@@ -10,4 +10,4 @@ co = cohere.ClientV2(api_key=os.environ["COHERE_API_KEY"])
 qdrant = QdrantClient(url=os.environ["QDRANT_URL"], api_key=os.environ["QDRANT_API_KEY"])
 bm25 = SparseTextEmbedding("Qdrant/bm25")
 
-COLLECTION_NAME = "your_collection_name"
+COLLECTION_NAME = "imp_docs"
