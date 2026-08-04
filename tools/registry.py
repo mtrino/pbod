@@ -1,7 +1,7 @@
-from tools._email_parser import read_emails
-from tools._rag_search import search
+from tools._email_parser import search_inbox
+from tools._rag_search import search_db
 
 TOOLS_REGISTRY = {
-    'read_emails': read_emails,
-    'search': search
+    'search_inbox': search_inbox,
+    'search_db': search_db
 }
