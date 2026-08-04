@@ -15,13 +15,13 @@ load_dotenv()
 
 SYNC_FILE = "data/synced.json"
 KB_PATH = "data/resources"
-COLLECTION_NAME = "your_collection_name"
+COLLECTION_NAME = "imp_docs"
 MAX_CHUNK_SIZE = 96
 
 def _get_all_files(file_path: str) -> str:
     """Returns the list of all files iteratively in the path."""
     files = os.listdir(file_path)
-    return [os.path.join(file_path, file) for file in files]
+    return [os.path.join(file_path, file) for file in files if not file == ".DS_Store"]
 
 def _get_already_indexed_files(sync_metadata_path: str) -> str:
     """Gets the list of already indexed files. """
