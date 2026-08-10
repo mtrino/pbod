@@ -3,6 +3,8 @@ from enum import Enum
 from config import co
 from pydantic import BaseModel, Field
 
+from memory import HybridMemory
+
 ########################################################################
 # Data Model
 ########################################################################
@@ -26,14 +28,25 @@ class SupervisorPlan(BaseModel):
 # Agent definition
 ########################################################################
 
-def supervisor(user_prompt: str, model_name: str = "command-a-03-2025") -> str:
+def supervisor(user_prompt: str, session_id: str, memory: HybridMemory, model_name: str = "command-a-03-2025") -> str:
     """Acts as the supervisor function, which routes requests to different agents based on subject."""
     print("\n Running request via supervisor.... ")
 
+    # 1. MEMORY INJECTION: Log the start of the interaction
+    memory.log_session_message(session_id, "user", user_prompt)
+    memory.update_global_state(session_id, user_prompt, status="routing", routed_to="supervisor")
+
+    # 2. MEMORY INJECTION: Fetch recent board activity to give the Supervisor context
+    recent_activity = memory.get_recent_ledger(limit=3)
+    ledger_context = "\n".join(recent_activity) if recent_activity else "No recent board activity"
+
     # Simplify the system prompt. No more begging for JSON syntax!
-    system_prompt = """You are a Chief of Staff routing user requests.
+    system_prompt = f"""You are a Chief of Staff routing user requests.
         Your goal is to decide which agent should handle the request.
         Break down multi-part queries into sequential steps.
+
+        === Recent Board Activity ===
+        {ledger_context}
 
         Logic:
         - Choose EMAIL if the user asks about money, spending, banks, tax, or bills.
@@ -54,6 +67,12 @@ def supervisor(user_prompt: str, model_name: str = "command-a-03-2025") -> str:
 
     # Parse into python object
     parsed_plan = SupervisorPlan.model_validate_json(decision_text)
+
+    # 3. MEMORY INJECTION: Update state and ledger with the routing decision
+    if parsed_plan.plan:
+        first_assigned_agent = parsed_plan.plan[0].agent.value
+        memory.update_global_state(session_id, user_prompt, status="handoff_pending", routed_to=first_assigned_agent)
+        memory.publish_to_ledger("supervisor", f"Generated routing plan with {len(parsed_plan.plan)} steps. Handing off to {first_assigned_agent}.")
 
     return parsed_plan
 

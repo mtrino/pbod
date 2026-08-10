@@ -6,6 +6,7 @@ load_dotenv()
 from tools.tool_schemas import inbox_search, rag_search
 from tools.registry import TOOLS_REGISTRY
 from config import co
+from memory import HybridMemory
 
 ########################################################################
 # HELPER FUNCTION
@@ -58,36 +59,78 @@ def _execute_agent_loop(system_prompt: str, user_question: str, tools: list, max
 # EMAIL AGENT
 ########################################################################
 
-def email_agent(user_question: str) -> str:
+def email_agent(user_question: str, session_id: str, memory: HybridMemory) -> str:
     """Takes an user question and finds the answer from the email."""
-    system_prompt = (
-        "You are a precise assistant. Use the tools to gather facts and to do any arithmetic. "
-        "When you have enough information, stop calling tools and answer."
-    )
-    return _execute_agent_loop(
+    print(f"\n[Email Agent] Processing task for session {session_id}...")
+
+    # 1. Update State
+    memory.update_global_state(session_id, user_question, status="processing", routed_to="email_agent")
+
+    # 2. Retrieve Isolated Semantic Memory (Qdrant)
+    specialist_facts = memory.retrieve_specialist_knowledge("email_agent", user_question)
+    facts_context = "\n- ".join(specialist_facts) if specialist_facts else "No prior learned context."
+
+    system_prompt = f"""You are a precise assistant. Use the tools to gather facts and to do any arithmetic. 
+    When you have enough information, stop calling tools and answer.
+
+    === Your Private Knowledge Base ===
+    {facts_context}
+    """
+
+    final_answer = _execute_agent_loop(
         user_question=user_question, 
         system_prompt=system_prompt, 
         tools=[inbox_search]
     )
+
+    # 5. Post-Execution Memory Updates (Session & Ledger)
+    memory.log_session_message(session_id, "email_agent", final_answer)
+    memory.publish_to_ledger("email_agent", f"Processed email query: '{user_question[:40]}...'")
+    memory.update_global_state(session_id, user_question, status="completed", routed_to="email_agent")
+
+    return final_answer
     
 ########################################################################
 # LOCAL AGENT
 ########################################################################
 
-def local_agent(user_question: str, max_steps: int = 4) -> str:
+def local_agent(user_question: str, session_id: str, memory: HybridMemory, max_steps: int = 4) -> str:
     """Takes a user question, finds the relevant chunks in a vector database, using those as context, generates the answer"""
-    system_prompt = (
-        "You are a precise assistant. "
-        "Use the tools to gather facts and answer question regarding any statistice, Data Structures or any ML Interview. "
-        "Only answer using the contexts retrieved. "
-        "When you have enough information, stop calling tools and answer. "
-        "If no context received, say I don't know instead of making things up."
-    )
-    return _execute_agent_loop(
+    print(f"\n[Local Agent] Processing task for session {session_id}...")
+
+    # 1. Update State
+    memory.update_global_state(session_id, user_question, status="processing", routed_to="local_agent")
+
+    # 2. Retrieve Isolated Semantic Memory (Qdrant)
+    # E.g., The agent might recall: "User is applying for Data Scientist roles."
+    specialist_facts = memory.retrieve_specialist_knowledge("local_agent", user_question)
+    facts_context = "\n- ".join(specialist_facts) if specialist_facts else "No prior learned context."
+
+    # 3. Augment System Prompt with Qdrant Memory
+    system_prompt = f"""You are a precise assistant. 
+    Use the tools to gather facts and answer questions regarding any statistics, Data Structures or any ML Interview. 
+    Only answer using the contexts retrieved. 
+    When you have enough information, stop calling tools and answer. 
+    If no context received, say I don't know instead of making things up.
+
+    === Your Private Knowledge Base ===
+    {facts_context}
+    """
+    
+    # 4. Execute ReAct Loop
+    final_answer = _execute_agent_loop(
         user_question=user_question, 
         system_prompt=system_prompt, 
-        tools=[rag_search]
+        tools=[rag_search],
+        max_steps=max_steps
     )
+
+    # 5. Post-Execution Memory Updates (Session & Ledger)
+    memory.log_session_message(session_id, "local_agent", final_answer)
+    memory.publish_to_ledger("local_agent", f"Answered technical/ML query: '{user_question[:40]}...'")
+    memory.update_global_state(session_id, user_question, status="completed", routed_to="local_agent")
+
+    return final_answer
 
 if __name__ == "__main__":
     email_agent("Summarize the last email I got from mudrex")
