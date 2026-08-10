@@ -9,7 +9,7 @@ inbox_search = {
             "properties": {
                 "company_names": {"type": "array"},
                 "days_ago": {"type": "integer"},
-                "keywords": {"type": "array"}
+                "keywords": {"type": "array", "items": {"type": "string"}}
             },
             "required": ["company_names", "days_ago"]
         }

@@ -34,7 +34,7 @@ def _get_gmail_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file('../keys/credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
         with open('token.pickle', 'wb') as token:
             pickle.dump(creds, token)
@@ -73,7 +73,6 @@ def _extract_email_body(payload: dict) -> str:
 
 
 # The Main Tool
-
 @validate_call
 def search_inbox(**kwargs) -> str:
     """
@@ -125,3 +124,6 @@ def search_inbox(**kwargs) -> str:
         combined_text += f"--- From: {sender} | Subject: {subject} ---\n{clean_text[:3000]}\n\n"
 
     return combined_text
+
+if __name__ == "__main__":
+    print(search_inbox(**{'company_names': ['axis bank'], "days_ago": 3}))
