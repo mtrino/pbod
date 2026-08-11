@@ -93,6 +93,17 @@ class HybridMemory:
             """, (session_id, objective, status, routed_to))
             conn.commit()
 
+    def get_global_state(self, session_id: str):
+        """Returns the current state given a session id"""
+        with sqlite3.connect(self.sqlite_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT current_objective, status, last_routed_to
+                FROM global_state 
+                WHERE session_id = ?
+            """, (session_id, ))
+            return cursor.fetchall()
+
     # ==========================================
     # 2. SESSION LOGIC (SQLITE)
     # ==========================================
