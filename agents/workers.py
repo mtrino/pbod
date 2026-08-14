@@ -1,12 +1,13 @@
 import json
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+from langfuse import observe, propagate_attributes
 
 load_dotenv()
 
 from tools.tool_schemas import inbox_search, rag_search
 from tools.registry import TOOLS_REGISTRY
-from config import co
+from config import co, langfuse_context
 from memory import HybridMemory
 
 ########################################################################
@@ -21,8 +22,33 @@ class WorkerResponse(BaseModel):
 # HELPER FUNCTION
 ########################################################################
 
+@observe(as_type="generation")
+def _call_llm(chat_kwargs: dict) -> object:
+
+    # Update the current generation
+    langfuse_context.update_current_generation(
+        input=chat_kwargs.get("messages", []),
+        model=chat_kwargs.get("model", "command-a-03-2025")
+    )
+
+    response = co.chat(**chat_kwargs)
+    
+    if not response.message.tool_calls:
+        langfuse_context.update_current_generation(output=response.message.content[0].text)
+    else:
+        langfuse_context.update_current_generation(output=f"Tool Calls Requested: {[tc.function.name for tc in response.message.tool_calls]}")
+         
+    return response
+
+@observe(name="ReAct Loop")
 def _execute_agent_loop(system_prompt: str, user_question: str, tools: list, response_schema: dict = None, max_steps: int = 4) -> str:
     """The universal execution engine for all ReAct agents."""
+
+    # Logging the starting state of the loop
+    langfuse_context.update_current_span(
+        input={"question": user_question, "tools": [t.get("name") for t in tools if isinstance(t, dict)]}
+    )
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_question},
@@ -39,12 +65,14 @@ def _execute_agent_loop(system_prompt: str, user_question: str, tools: list, res
     if response_schema:
         chat_kwargs["response_format"] = {"type": "json_object", "schema": response_schema}
 
-    for step in range(max_steps):
+    for _ in range(max_steps):
 
-        response = co.chat(**chat_kwargs)
+        response = _call_llm(chat_kwargs)
 
         if not response.message.tool_calls:
-            return response.message.content[0].text
+            final_text = response.message.content[0].text
+            langfuse_context.update_current_span(output=final_text)
+            return final_text
 
         messages.append(
             {"role": "assistant",
@@ -69,16 +97,22 @@ def _execute_agent_loop(system_prompt: str, user_question: str, tools: list, res
                 })
 
     # Return a fallback JSON string if it fails
-    return json.dumps({"message": "Error: Max steps reached", "out_of_scope": False})
+    fallback = json.dumps({"message": "Error: Max steps reached", "out_of_scope": False})
+    langfuse_context.update_current_span(output=fallback)
+    return fallback
         
 
 ########################################################################
 # EMAIL AGENT
 ########################################################################
 
+@observe()
 def email_agent(user_question: str, session_id: str, memory: HybridMemory) -> str:
     """Takes an user question and finds the answer from the email."""
     print(f"\n[Email Agent] Processing task for session {session_id}...")
+
+    # Update current span
+    langfuse_context.update_current_span(input=user_question)
 
     # 1. Update State
     memory.update_global_state(session_id, user_question, status="processing", routed_to="email_agent")
@@ -130,6 +164,7 @@ def email_agent(user_question: str, session_id: str, memory: HybridMemory) -> st
         print("\n[Email Agent] Request out of scope. Handing back to supervisor.")
         # Clear the active routing state so the main loop sends it back to the supervisor
         memory.update_global_state(session_id, user_question, status="routing", routed_to=None)
+        langfuse_context.update_current_span(output="Rejected: Out of scope")
         return parsed_response
 
     # 5. Post-Execution Memory Updates (Session & Ledger)
@@ -137,16 +172,21 @@ def email_agent(user_question: str, session_id: str, memory: HybridMemory) -> st
     memory.publish_to_ledger("email_agent", f"Processed email query: '{user_question[:40]}...'")
     memory.update_global_state(session_id, user_question, status="completed", routed_to="email_agent")
 
+    langfuse_context.update_current_span(output=parsed_response.model_dump())
     return parsed_response
     
 ########################################################################
 # LOCAL AGENT
 ########################################################################
 
-def local_agent(user_question: str, session_id: str, memory: HybridMemory, max_steps: int = 4) -> str:
+@observe()
+def local_agent(user_question: str, session_id: str, memory: HybridMemory) -> str:
     """Takes a user question, finds the relevant chunks in a vector database, using those as context, generates the answer"""
     print(f"\n[Local Agent] Processing task for session {session_id}...")
 
+    # Update current span
+    langfuse_context.update_current_span(input=user_question)
+    
     # 1. Update State
     memory.update_global_state(session_id, user_question, status="processing", routed_to="local_agent")
 
@@ -186,7 +226,7 @@ def local_agent(user_question: str, session_id: str, memory: HybridMemory, max_s
         user_question=user_question, 
         system_prompt=system_prompt, 
         tools=[rag_search],
-        max_steps=max_steps
+        response_schema=WorkerResponse.model_json_schema()
     )
 
     # Parse the JSON string back into our Pydantic object
@@ -201,6 +241,7 @@ def local_agent(user_question: str, session_id: str, memory: HybridMemory, max_s
         print("\n[Local Agent] Request out of scope. Handing back to supervisor.")
         # Clear the active routing state so the main loop sends it back to the supervisor
         memory.update_global_state(session_id, user_question, status="routing", routed_to=None)
+        langfuse_context.update_current_span(output="Rejected: Out of scope")
         return parsed_response
 
     # 6. Post-Execution Memory Updates (Session & Ledger)
@@ -208,6 +249,7 @@ def local_agent(user_question: str, session_id: str, memory: HybridMemory, max_s
     memory.publish_to_ledger("local_agent", f"Answered technical/ML query: '{user_question[:40]}...'")
     memory.update_global_state(session_id, user_question, status="completed", routed_to="local_agent")
 
+    langfuse_context.update_current_span(output=parsed_response.model_dump())
     return parsed_response
 
 
