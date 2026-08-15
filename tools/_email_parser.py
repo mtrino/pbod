@@ -5,13 +5,23 @@ from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+from pydantic import BaseModel, Field, validate_call
+from typing import List, Optional
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
-ENTITY_MAPPER = {
-    "Axis": "alerts@axis.bank.in",
-    "HDFC": "alerts@hdfcbank.bank.in"
-}
+########################################################################
+# Data Model
+########################################################################
+
+class DynamicEmailSearch(BaseModel):
+    company_names: List[str] = Field(description="Core names of the companies to search for (e.g., 'axis', 'kempower', 'nvidia'). Omit suffixes like 'bank' or 'ltd'.")
+    days_ago: int = Field(description="How many days back to search")
+    keywords: Optional[List[str]] = Field(default=None, description="Optional keywords to filter the content (e.g., 'spent', 'interview', 'statement')")
+
+########################################################################
+# Functions
+########################################################################
 
 def _get_gmail_service():
     """Initializes and returns the authenticated Gmail API service client."""
@@ -24,7 +34,7 @@ def _get_gmail_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file('../keys/credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
         with open('token.pickle', 'wb') as token:
             pickle.dump(creds, token)
@@ -61,53 +71,59 @@ def _extract_email_body(payload: dict) -> str:
     
     return ""
 
-def read_emails(senders: list[str], days_ago: int = 3, subject_filter: list[str] = ["spent", "update"]) -> str:
-    """Parser tool for email body."""
 
-    print(f"\n[PARSER: Searching email (newer than {days_ago} days)...]")
-    service = _get_gmail_service()
-
-    # Cleaning the 
-
-    # Creating the query
-    mapped_emails = []
-    for s in senders:
-        if "axis" in s.lower():
-            mapped_emails.append(ENTITY_MAPPER["Axis"])
-        if "hdfc" in s.lower():
-            mapped_emails.append(ENTITY_MAPPER["HDFC"]) 
-
-    queries = [f"(from:{e}) newer_than:{days_ago}d" for e in mapped_emails]
+# The Main Tool
+@validate_call
+def search_inbox(**kwargs) -> str:
+    """
+    Queries gmail dynamically based on llm inputs
+    """
+    args = DynamicEmailSearch(**kwargs)
+    print(f"\n[PARSER: Building dynamic query for {args.company_names} over last {args.days_ago} days...]")
     
-    messages = []
-    for q in queries:
-        results = service.users().messages().list(userId='me', q=q, maxResults=10).execute()
-        messages.extend(results.get('messages', []))
+    # 1. Build the sender clause: {from:axis from:kempower}
+    from_parts = " OR ".join([f'from:"{name}"' for name in args.company_names])
+    from_clause = f"({from_parts})"
+    
+    query_parts = [from_clause, f"newer_than:{args.days_ago}d"]
+
+    # 2. Add keywords if the LLM provided them: {spent interview statement}
+    if args.keywords:
+        keyword_clause = "{" + " ".join([kw for kw in args.keywords]) + "}"
+        query_parts.append(keyword_clause)
+        
+    final_query = " ".join(query_parts)
+    print(f"[EXECUTE GMAIL QUERY]: {final_query}")
+
+    # 3. Fetch messages from Gmail API
+    service = _get_gmail_service()
+    results = service.users().messages().list(userId='me', q=final_query, maxResults=15).execute()
+    messages = results.get('messages', [])
 
     if not messages:
-        return "No recent spends found."
+        return f"No emails found matching query: {final_query}"
 
+    # 4. Process and format the results
     combined_text = ""
     for msg in messages:
         msg_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
         payload = msg_data.get('payload', {})
         headers = payload.get('headers', [])
         
-        # Extract and sanitize headers to pure ASCII
-        raw_sender = next((d['value'] for d in headers if d['name'] == 'From'), "Banks")
+        # Extract headers safely
+        raw_sender = next((d['value'] for d in headers if d['name'] == 'From'), "Unknown Sender")
         raw_subject = next((d['value'] for d in headers if d['name'] == 'Subject'), "No Subject")
         
         sender = raw_sender.encode("ascii", "ignore").decode("ascii")
         subject = raw_subject.encode("ascii", "ignore").decode("ascii").lower()
-
-        if subject_filter and not any(keyword in subject for keyword in subject_filter):
-            continue  # Skip this email if the subject doesn't match the filter
         
-        # Extract body and sanitize to pure ASCII (removes fancy stars, bullet points, or ₹ signs that cause crashes)
-        raw_clean_text = _extract_email_body(payload)
-        clean_text = raw_clean_text.encode("ascii", "ignore").decode("ascii")
+        # Extract body
+        clean_text = _extract_email_body(payload)
         
-        # Truncate extremely long articles to save context window tokens
+        # Truncate extremely long emails to save context window tokens
         combined_text += f"--- From: {sender} | Subject: {subject} ---\n{clean_text[:3000]}\n\n"
 
     return combined_text
+
+if __name__ == "__main__":
+    print(search_inbox(**{'company_names': ['axis bank'], "days_ago": 3}))

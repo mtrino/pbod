@@ -3,7 +3,7 @@ from qdrant_client.models import SparseVector, FusionQuery, Prefetch
 from config import co, bm25, qdrant, COLLECTION_NAME
 
 
-def search(question: str, fetch: int = 20, k: int = 10):
+def search_db(question: str, fetch: int = 20, k: int = 10):
     """Searches the vector DB to generate relevant answers."""
 
     dense = co.embed(

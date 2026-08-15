@@ -1,26 +1,26 @@
 # Define the tool schema for the email tool
-email_tool = {
+inbox_search = {
     "type": "function",
     "function": {
-        "name": "read_emails",
-        "description": "Fetches email from specific senders (mostly transactional) from Gmail to check how much is spent.",
+        "name": "search_inbox",
+        "description": "Fetches email from specific senders (mostly transactional) from Gmail.",
         "parameters": {
             "type": "object",
             "properties": {
-                "senders": {"type": "array"},
+                "company_names": {"type": "array"},
                 "days_ago": {"type": "integer"},
-                "subject_filter": {"type": "array"}
+                "keywords": {"type": "array", "items": {"type": "string"}}
             },
-            "required": ["senders"]
+            "required": ["company_names", "days_ago"]
         }
     }
 }
 
 # Define the tool schema for the rag search tool
-rag_search_tool = {
+rag_search = {
     "type": "function",
     "function": {
-        "name": "search",
+        "name": "search_db",
         "description": "Searches the vector database using hybrid search (semantic + keyword) to find relevant technical information",
         "parameters": {
             "type": "object",
